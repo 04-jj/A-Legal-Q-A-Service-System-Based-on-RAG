@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/knowledge_bases.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-title">
+                <h1>DeepSeek 法律助手</h1>
+                <p>基于DeepSeek-R1模型的法律智能问答系统</p>
+            </div>
+
+            <div class="header-user">
+                <span>欢迎, {{ current_user.phone }}</span>
+                {% if current_user.role in ['expert', 'admin'] %}
+                    <a href="{{ url_for('upload_document') }}" class="btn-upload">
+                        <i class="fas fa-upload"></i> 上传文档
+                    </a>
+                {% endif %}
+                <a href="{{ url_for('logout') }}" class="btn-logout">
+                    <i class="fas fa-sign-out-alt"></i> 退出
+                </a>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <div class="sidebar">
+                <div class="sidebar-header">
+                    <h3>知识库管理</h3>
+                    <a href="{{ url_for('create_knowledge_base') }}" class="btn-new-kb">
+                        <i class="fas fa-plus"></i> 新建知识库
+                    </a>
+                </div>
+                <div class="sidebar-menu">
+                    <a href="{{ url_for('home') }}" class="menu-item">
+                        <i class="fas fa-comments"></i> 对话界面
+                    </a>
+                    <a href="{{ url_for('knowledge_bases') }}" class="menu-item active">
+                        <i class="fas fa-book"></i> 我的知识库
+                    </a>
+                </div>
+            </div>
+
+            <div class="content-area">
+                <div class="content-header">
+                    <h2>我的知识库</h2>
+                    <p>管理您的个人知识库，创建不同的知识库来分类整理文档</p>
+                </div>
+
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        <div class="flash-messages">
+                            {% for category, message in messages %}
+                                <div class="alert alert-{{ category }}">{{ message }}</div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                {% endwith %}
+
+                <div class="kb-list">
+                    {% if knowledge_bases %}
+                        {% for kb in knowledge_bases %}
+                            <div class="kb-item">
+                                <div class="kb-info">
+                                    <div class="kb-name">
+                                        <i class="fas fa-book"></i>
+                                        {{ kb.name }}
+                                    </div>
+                                    <div class="kb-meta">
+                                        <span><i class="fas fa-file"></i> {{ kb.documents|length }} 个文档</span>
+                                        <span><i class="far fa-calendar-alt"></i> {{ kb.updated_at.strftime('%Y-%m-%d') }}</span>
+                                    </div>
+                                    <div class="kb-description">
+                                        {{ kb.description or '暂无描述' }}
+                                    </div>
+                                </div>
+                                <div class="kb-actions">
+                                    <a href="{{ url_for('edit_knowledge_base', kb_id=kb.id) }}" class="btn-edit">
+                                        <i class="fas fa-edit"></i> 编辑
+                                    </a>
+                                    <form method="POST" action="{{ url_for('delete_knowledge_base', kb_id=kb.id) }}" onsubmit="return confirm('确定要删除这个知识库吗？所有关联文档也将被删除。');">
+                                        <button type="submit" class="btn-delete">
+                                            <i class="fas fa-trash-alt"></i> 删除
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="empty-state">
+                            <i class="fas fa-book-open"></i>
+                            <h3>您还没有创建任何知识库</h3>
+                            <p>创建一个知识库来整理您的文档</p>
+                            <a href="{{ url_for('create_knowledge_base') }}" class="btn-primary">新建知识库</a>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

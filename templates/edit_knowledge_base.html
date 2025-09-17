@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>编辑知识库 - DeepSeek 法律助手</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto Sans SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/knowledge_bases.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-title">
+                <h1>DeepSeek 法律助手</h1>
+                <p>基于DeepSeek-R1模型的法律智能问答系统</p>
+            </div>
+
+            <div class="header-user">
+                <span>欢迎, {{ current_user.phone }}</span>
+                {% if current_user.role in ['expert', 'admin'] %}
+                    <a href="{{ url_for('upload_document') }}" class="btn-upload">
+                        <i class="fas fa-upload"></i> 上传文档
+                    </a>
+                {% endif %}
+                <a href="{{ url_for('logout') }}" class="btn-logout">
+                    <i class="fas fa-sign-out-alt"></i> 退出
+                </a>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <div class="sidebar">
+                <div class="sidebar-header">
+                    <h3>知识库管理</h3>
+                    <a href="{{ url_for('create_knowledge_base') }}" class="btn-new-kb">
+                        <i class="fas fa-plus"></i> 新建知识库
+                    </a>
+                </div>
+                <div class="sidebar-menu">
+                    <a href="{{ url_for('home') }}" class="menu-item">
+                        <i class="fas fa-comments"></i> 对话界面
+                    </a>
+                    <a href="{{ url_for('knowledge_bases') }}" class="menu-item active">
+                        <i class="fas fa-book"></i> 我的知识库
+                    </a>
+                    {% if current_user.role in ['expert', 'admin'] %}
+                    <a href="{{ url_for('upload_document') }}" class="menu-item">
+                        <i class="fas fa-upload"></i> 上传文档
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="content-area">
+                <div class="content-header">
+                    <h2>编辑知识库</h2>
+                    <p>修改知识库的名称和描述</p>
+                </div>
+
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        <div class="flash-messages">
+                            {% for category, message in messages %}
+                                <div class="alert alert-{{ category }}">{{ message }}</div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                {% endwith %}
+
+                <form method="POST" action="{{ url_for('edit_knowledge_base', kb_id=knowledge_base.id) }}" class="kb-form">
+                    <div class="form-group">
+                        <label for="name">知识库名称 *</label>
+                        <input type="text" id="name" name="name" value="{{ knowledge_base.name }}" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="description">知识库描述</label>
+                        <textarea id="description" name="description" rows="3">{{ knowledge_base.description or '' }}</textarea>
+                    </div>
+
+                    <div class="form-actions">
+                        <a href="{{ url_for('knowledge_bases') }}" class="btn-cancel">
+                            <i class="fas fa-times"></i> 取消
+                        </a>
+                        <button type="submit" class="btn-submit">
+                            <i class="fas fa-save"></i> 保存更改
+                        </button>
+                    </div>
+                </form>
+
+                <div class="kb-documents">
+                    <h3>知识库中的文档</h3>
+                    {% if knowledge_base.documents %}
+                        <div class="document-list">
+                            {% for doc in knowledge_base.documents %}
+                                <div class="document-item">
+                                    <div class="document-info">
+                                        <div class="document-name">
+                                            <i class="fas
+                                                {% if doc.file_type == 'pdf' %}fa-file-pdf
+                                                {% elif doc.file_type == 'docx' %}fa-file-word
+                                                {% else %}fa-file-alt
+                                                {% endif %}"
+                                                style="margin-right: 8px;
+                                                {% if doc.file_type == 'pdf' %}color: #e63946;
+                                                {% elif doc.file_type == 'docx' %}color: #2b579a;
+                                                {% else %}color: #495057;
+                                                {% endif %}">
+                                            </i>
+                                            {{ doc.filename }}
+                                        </div>
+                                        <div class="document-meta">
+                                            <span><i class="fas fa-file"></i> {{ doc.file_type|upper }}</span>
+                                            <span><i class="fas fa-weight-hanging"></i> {{ "%.2f MB"|format(doc.file_size / 1024 / 1024) }}</span>
+                                            <span><i class="far fa-calendar-alt"></i> {{ doc.uploaded_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="empty-state small">
+                            <p>此知识库中还没有文档</p>
+                            <a href="{{ url_for('upload_document') }}" class="btn-primary">上传文档</a>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

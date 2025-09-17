@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://fonts.googleapis.com/css2?family=Noto Sans SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/up.css') }}">
+</head>
+<body>
+    <div class="auth-wrapper">
+        <div class="upload-container">
+            <a href="{{ url_for('home') }}" class="back-link">
+                <i class="fas fa-arrow-left"></i>
+                <span>返回首页</span>
+            </a>
+
+            <div class="upload-card">
+                <h2>上传领域文档</h2>
+
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        <div class="flash-messages">
+                            {% for category, message in messages %}
+                                <div class="alert alert-{{ category }}">{{ message }}</div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                {% endwith %}
+
+                <form method="POST" action="{{ url_for('upload_document') }}" enctype="multipart/form-data" class="upload-form" id="uploadForm">
+                    <div class="form-group">
+                        <label for="knowledge_base_id">选择知识库</label>
+                        <select id="knowledge_base_id" name="knowledge_base_id" class="kb-select">
+                            <option value="">-- 不指定知识库 --</option>
+                            {% for kb in knowledge_bases %}
+                                <option value="{{ kb.id }}">{{ kb.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="file"></label>
+                        <p style="font-size: 0.9rem; color: var(--text-light); margin-bottom: 1.25rem;">
+                            支持格式: PDF, DOCX, TXT | 最大文件大小: 10MB
+                        </p>
+                        <div class="file-input-wrapper">
+                            <button type="button" class="file-input-btn">
+                                <span>选择文件</span>
+                            </button>
+                            <input type="file" id="file" name="file" accept=".pdf,.docx,.txt" required>
+                        </div>
+                        <div id="file-info" class="file-info" style="display: none;">
+                            <i class="fas fa-file-alt"></i>
+                            <span id="file-name"></span>
+                            <span id="file-size" style="margin-left: auto;"></span>
+                        </div>
+                    </div>
+
+                    <div class="upload-progress" id="uploadProgress">
+                        <div>上传中，请稍候...</div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progressFill"></div>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn-auth" id="submitBtn">
+                        <span>上传</span>
+                    </button>
+                </form>
+            </div>
+
+            <div class="upload-card">
+                <h2>上传记录</h2>
+
+                {% if uploaded_docs %}
+                    <div class="doc-list">
+                        {% for doc in uploaded_docs %}
+                            <div class="doc-item">
+                                <div class="doc-info">
+                                    <div class="doc-name">
+                                        <i class="fas
+                                            {% if doc.file_type == 'pdf' %}fa-file-pdf
+                                            {% elif doc.file_type == 'docx' %}fa-file-word
+                                            {% else %}fa-file-alt
+                                            {% endif %}"
+                                            style="margin-right: 8px;
+                                            {% if doc.file_type == 'pdf' %}color: #e63946;
+                                            {% elif doc.file_type == 'docx' %}color: #2b579a;
+                                            {% else %}color: #495057;
+                                            {% endif %}">
+                                        </i>
+                                        {{ doc.filename }}
+                                        {% if doc.knowledge_base %}
+                                            <span class="kb-tag">{{ doc.knowledge_base.name }}</span>
+                                        {% endif %}
+                                    </div>
+                                    <div class="doc-meta">
+                                        <span><i class="fas fa-file"></i> {{ doc.file_type|upper }}</span>
+                                        <span><i class="fas fa-weight-hanging"></i> {{ "%.2f MB"|format(doc.file_size / 1024 / 1024) }}</span>
+                                        <span><i class="far fa-calendar-alt"></i> {{ doc.uploaded_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                                    </div>
+                                </div>
+                                <div class="doc-actions">
+                                    <form method="POST" action="{{ url_for('delete_uploaded_document', doc_id=doc.id) }}" onsubmit="return confirm('确定要删除这个文档吗？删除后将从知识库中移除。');">
+                                        <button type="submit" class="btn-delete">
+                                            <i class="fas fa-trash-alt"></i>
+                                            <span>删除</span>
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="empty-state">
+                        <i class="far fa-folder-open"></i>
+                        <p>暂无上传记录</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 显示选中的文件信息
+        document.getElementById('file').addEventListener('change', function(e) {
+            const fileInfo = document.getElementById('file-info');
+            const fileName = document.getElementById('file-name');
+            const fileSize = document.getElementById('file-size');
+
+            if (this.files && this.files[0]) {
+                const file = this.files[0];
+                fileName.textContent = file.name;
+
+                // 格式化文件大小
+                let size = file.size;
+                if (size < 1024) {
+                    fileSize.textContent = size + ' B';
+                } else if (size < 1024 * 1024) {
+                    fileSize.textContent = (size / 1024).toFixed(2) + ' KB';
+                } else {
+                    fileSize.textContent = (size / 1024 / 1024).toFixed(2) + ' MB';
+                }
+
+                fileInfo.style.display = 'flex';
+            } else {
+                fileInfo.style.display = 'none';
+            }
+        });
+
+        // 上传进度显示
+        document.getElementById('uploadForm').addEventListener('submit', function(e) {
+            const submitBtn = document.getElementById('submitBtn');
+            const uploadProgress = document.getElementById('uploadProgress');
+            const progressFill = document.getElementById('progressFill');
+
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>上传中...</span>';
+            uploadProgress.style.display = 'block';
+
+            // 模拟进度更新
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += Math.random() * 10;
+                if (progress > 90) {
+                    progress = 90; // 最后10%等待服务器响应
+                }
+                progressFill.style.width = progress + '%';
+            }, 300);
+
+            // 清除定时器
+            setTimeout(() => {
+                clearInterval(interval);
+            }, 5000);
+        });
+
+        // 文件拖放功能
+        const dropArea = document.querySelector('.file-input-wrapper');
+
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropArea.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight() {
+            dropArea.classList.add('highlight');
+        }
+
+        function unhighlight() {
+            dropArea.classList.remove('highlight');
+        }
+
+        dropArea.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            const fileInput = document.getElementById('file');
+
+            fileInput.files = files;
+
+            // 触发change事件
+            const event = new Event('change');
+            fileInput.dispatchEvent(event);
+        }
+    </script>
+</body>
+</html>

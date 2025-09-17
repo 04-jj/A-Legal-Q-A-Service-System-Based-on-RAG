@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>基于DeepSeek的法律智能问答系统</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto Sans SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-title">
+                <h1>DeepSeek 法律助手</h1>
+                <p>基于DeepSeek-R1模型的法律智能问答系统</p>
+            </div>
+
+             <div class="header-user">
+                <span>欢迎, {{ current_user.phone }}</span>
+                {% if current_user.role in ['expert', 'admin'] %}
+                    <a href="{{ url_for('upload_document') }}" class="btn-upload">
+                        <i class="fas fa-upload"></i> 上传文档
+                    </a>
+                    <a href="{{ url_for('knowledge_bases') }}" class="btn-upload">
+                        <i class="fas fa-book"></i> 知识库管理
+                    </a>
+                {% endif %}
+                <a href="{{ url_for('logout') }}" class="btn-logout">
+                    <i class="fas fa-sign-out-alt"></i> 退出
+                </a>
+             </div>
+        </header>
+
+        <div class="main-content">
+            <div class="sidebar">
+                <div class="sidebar-header">
+                    <h3>对话历史</h3>
+                    <button id="new-chat-btn" class="btn-new-chat">
+                        <i class="fas fa-plus"></i> 新对话
+                    </button>
+                </div>
+                <div class="search-box">
+                    <input type="text" placeholder="搜索对话..." id="search-chat">
+                    <i class="fas fa-search"></i>
+                </div>
+                <div class="history-list" id="history-list">
+                </div>
+            </div>
+
+            <div class="chat-container">
+                <div class="knowledge-base-selector">
+                    <select id="knowledge-base-selector">
+                        <option value="">-- 使用所有知识库 --</option>
+                    </select>
+                </div>
+
+                <div id="chat-box" class="chat-box">
+                    <div class="bot-message">
+                        <div class="avatar"><i class="fas fa-robot"></i></div>
+                        <div class="message-content">您好！我是DeepSeek智能助手，请问有什么可以帮您的吗？</div>
+                    </div>
+                </div>
+
+                <div class="input-area">
+                    <input type="text" id="user-input" placeholder="输入您的问题..." autocomplete="off">
+                    <button id="send-btn"><i class="fas fa-paper-plane"></i> 发送</button>
+                </div>
+            </div>
+
+            <div class="recommendation-sidebar">
+                <div class="sidebar-header">
+                    <h3>热门推荐</h3>
+                </div>
+                <div class="recommendation-list">
+                    <div class="recommendation-item">
+                        <div class="recommendation-title">劳动合同常见问题</div>
+                        <div class="recommendation-content">如何解除劳动合同？试用期规定有哪些？</div>
+                    </div>
+                    <div class="recommendation-item">
+                        <div class="recommendation-title">婚姻家庭法律</div>
+                        <div class="recommendation-content">离婚财产分割原则是什么？子女抚养权判定标准是什么？</div>
+                    </div>
+                    <div class="recommendation-item">
+                        <div class="recommendation-title">交通事故处理</div>
+                        <div class="recommendation-content">责任认定的流程以及赔偿标准计算是什么？</div>
+                    </div>
+                    <div class="recommendation-item">
+                        <div class="recommendation-title">房产纠纷</div>
+                        <div class="recommendation-content">购房合同注意事项，产权纠纷解决</div>
+                    </div>
+                    <div class="recommendation-item">
+                        <div class="recommendation-title">消费者权益</div>
+                        <div class="recommendation-content">退换货法律规定，欺诈行为认定</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>
