@@ -25,20 +25,14 @@
 - 内存：≥ 8GB
 - 存储：≥ 10GB可用空间
 
-### 安装步骤
+### 系统演示
+| 功能模块 | 界面展示 | 功能说明 |
+|---------|---------|---------|
+| 用户登录 | ![登录](images/login.png) | 用户认证和权限管理 |
+| 问答主页 | ![问答](images/index.png) | 用户提问和新建对话 |
+| 文档上传 | ![知识库](images/knowledge_base.png) | 文档上传和维护 |
+| 知识库构建 | ![知识库](images/create_knowledge_base.png) | 个人知识库构建和知识库维护 |
 
-```bash
-# 1. 克隆项目
-git clone https://github.com/04-jj/A-Legal-Q-A-Service-System-Based-on-RAG.git
-cd law_system
-
-# 2. 创建虚拟环境
-conda create -n your_name python=3.11
-
-# 3. 安装依赖
-pip install -r requirements.txt
-
-```
 ## 项目完成情况
 
 ### 已完成
