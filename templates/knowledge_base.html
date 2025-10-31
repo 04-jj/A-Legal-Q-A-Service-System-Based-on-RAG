@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/knowledge_bases.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/knowledge_base.css') }}">
 </head>
 <body>
     <div class="container">
@@ -16,7 +16,7 @@
             </div>
 
             <div class="header-user">
-                <span>欢迎, {{ current_user.phone }}</span>
+                <span class="username" data-fullname="欢迎, {{ current_user.username }}">欢迎, {{ current_user.username }}</span>
                 {% if current_user.role in ['expert', 'admin'] %}
                     <a href="{{ url_for('upload_document') }}" class="btn-upload">
                         <i class="fas fa-upload"></i> 上传文档
@@ -103,5 +103,6 @@
             </div>
         </div>
     </div>
+    <script src="{{ url_for('static', filename='js/knowledge_base.js') }}"></script>
 </body>
 </html>

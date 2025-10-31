@@ -6,7 +6,7 @@
     <title>基于DeepSeek的法律智能问答系统</title>
     <link href="https://fonts.googleapis.com/css2?family=Noto Sans SC:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/index.css') }}">
 </head>
 <body>
     <div class="container">
@@ -15,16 +15,11 @@
                 <h1>DeepSeek 法律助手</h1>
                 <p>基于DeepSeek-R1模型的法律智能问答系统</p>
             </div>
-
              <div class="header-user">
-                <span>欢迎, {{ current_user.phone }}</span>
+                <span class="username" data-fullname="欢迎, {{ current_user.username }}">欢迎, {{ current_user.username }}</span>
                 {% if current_user.role in ['expert', 'admin'] %}
-                    <a href="{{ url_for('upload_document') }}" class="btn-upload">
-                        <i class="fas fa-upload"></i> 上传文档
-                    </a>
-                    <a href="{{ url_for('knowledge_bases') }}" class="btn-upload">
-                        <i class="fas fa-book"></i> 知识库管理
-                    </a>
+                    <a href="{{ url_for('upload_document') }}" class="btn-upload">上传文档</a>
+                    <a href="{{ url_for('knowledge_bases') }}" class="btn-upload">知识库管理</a>
                 {% endif %}
                 <a href="{{ url_for('logout') }}" class="btn-logout">
                     <i class="fas fa-sign-out-alt"></i> 退出
@@ -75,11 +70,11 @@
                 <div class="recommendation-list">
                     <div class="recommendation-item">
                         <div class="recommendation-title">劳动合同常见问题</div>
-                        <div class="recommendation-content">如何解除劳动合同？试用期规定有哪些？</div>
+                        <div class="recommendation-content">如何解除劳动合同</div>
                     </div>
                     <div class="recommendation-item">
                         <div class="recommendation-title">婚姻家庭法律</div>
-                        <div class="recommendation-content">离婚财产分割原则是什么？子女抚养权判定标准是什么？</div>
+                        <div class="recommendation-content">离婚财产分割原则是什么</div>
                     </div>
                     <div class="recommendation-item">
                         <div class="recommendation-title">交通事故处理</div>
@@ -87,17 +82,20 @@
                     </div>
                     <div class="recommendation-item">
                         <div class="recommendation-title">房产纠纷</div>
-                        <div class="recommendation-content">购房合同注意事项，产权纠纷解决</div>
+                        <div class="recommendation-content">购房合同的注意事项有哪些？</div>
                     </div>
                     <div class="recommendation-item">
                         <div class="recommendation-title">消费者权益</div>
-                        <div class="recommendation-content">退换货法律规定，欺诈行为认定</div>
+                        <div class="recommendation-content">退换货法律的规定？</div>
+                    </div>
+                    <div class="recommendation-item">
+                        <div class="recommendation-title">未成年人保护</div>
+                        <div class="recommendation-content">未成年人保护法的核心内容？</div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-
-    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/index.js') }}"></script>
 </body>
 </html>

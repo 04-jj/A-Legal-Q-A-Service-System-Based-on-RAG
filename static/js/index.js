@@ -12,9 +12,10 @@ document.addEventListener('DOMContentLoaded', function() {
     let currentChatId = null;
     let chats = [];
     let knowledgeBases = [];
+    let currentStreamingMessageId = null;
 
     // 初始化应用
-    function init() {
+    function init(){
         fetchChats();
         fetchKnowledgeBases();
         setupRecommendationItems();
@@ -58,17 +59,13 @@ document.addEventListener('DOMContentLoaded', function() {
     function setupRecommendationItems() {
         document.querySelectorAll('.recommendation-item').forEach(item => {
             item.addEventListener('click', function() {
-                const title = this.querySelector('.recommendation-title').textContent;
                 const content = this.querySelector('.recommendation-content').textContent;
 
-                // 创建新对话或使用当前对话
                 if (!currentChatId) {
                     createNewChat().then(() => {
-                        addMessageToChat('user', title);
                         sendMessage(content);
                     });
                 } else {
-                    addMessageToChat('user', title);
                     sendMessage(content);
                 }
             });
@@ -249,6 +246,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
 
+            // 限制标题长度
+            let title = chat.title || '新对话';
+            if (title.length > 25) {
+                title = title.substring(0, 25) + '...';
+            }
+
             item.innerHTML = `
                 <div class="history-item-text">
                     <div class="history-item-content" title="${chat.title || '新对话'}">${chat.title || '新对话'}</div>
@@ -351,28 +354,39 @@ document.addEventListener('DOMContentLoaded', function() {
 
         chatBox.appendChild(messageDiv);
         scrollToBottom();
+
+        // 如果是用户消息且需要保存，更新对话标题
+        if (save && sender === 'user' && currentChatId) {
+            // 使用消息的前20个字符作为标题
+            const newTitle = message.substring(0, 20) + (message.length > 20 ? '...' : '');
+            updateChatTitle(currentChatId, newTitle);
+        }
     }
 
-    // HTML转义函数
-    function escapeHtml(text) {
-        if (!text) return '';
-        return text
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
-    }
+    // 发送消息 - 主要修改部分
+    function sendMessage(message = null) {
+        const messageText = message || userInput.value.trim();
 
-    // 滚动到底部
-    function scrollToBottom() {
-        chatBox.scrollTop = chatBox.scrollHeight;
-    }
+        if (!messageText) return;
 
-    // 添加加载消息
-    function addLoadingMessage(id) {
+        // 清空输入框
+        if (!message) {
+            userInput.value = '';
+        }
+
+        // 如果没有当前对话，创建一个
+        if (!currentChatId) {
+            createNewChat().then(() => {
+                sendMessage(messageText);
+            });
+            return;
+        }
+
+        // 添加用户消息
+        addMessageToChat('user', messageText);
+
+        // 显示加载动画
         const loadingDiv = document.createElement('div');
-        loadingDiv.id = id;
         loadingDiv.className = 'bot-message';
         loadingDiv.innerHTML = `
             <div class="avatar"><i class="fas fa-robot"></i></div>
@@ -386,150 +400,211 @@ document.addEventListener('DOMContentLoaded', function() {
         `;
         chatBox.appendChild(loadingDiv);
         scrollToBottom();
-    }
 
-    // 移除加载消息
-    function removeLoadingMessage(id) {
-        const loadingDiv = document.getElementById(id);
-        if (loadingDiv) {
-            loadingDiv.remove();
-        }
-    }
+        // 获取知识库ID
+        const kbId = kbSelector ? kbSelector.value : '';
 
-    // 发送消息
-    function sendMessage(message) {
-        if (!message.trim() || !currentChatId) return;
-
-        // 添加加载状态
-        const loadingId = 'loading-' + Date.now();
-        addLoadingMessage(loadingId);
-
-        // 构建表单数据
-        const formData = new FormData();
-        formData.append('user_input', message);
-        formData.append('chat_id', currentChatId);
-
-        // 如果存在知识库选择器，添加选择的知识库ID
-        if (kbSelector && kbSelector.value) {
-            formData.append('knowledge_base_id', kbSelector.value);
-        }
-
-        // 发送请求
-        fetch('/ask', {
+        // 发送到服务器 - 使用正确的路由
+        fetch('/ask_stream', {
             method: 'POST',
-            body: formData
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+                'user_input': messageText,
+                'chat_id': currentChatId,
+                'knowledge_base_id': kbId
+            })
         })
         .then(response => {
             if (!response.ok) {
-                throw new Error('获取回复失败');
+                throw new Error('发送消息失败: ' + response.status);
             }
-            return response.json();
-        })
-        .then(data => {
-            removeLoadingMessage(loadingId);
-            addMessageToChat('bot', data.response);
-
-            // 更新对话标题
-            if (message.length > 0) {
-                const newTitle = message.length > 10 ? message.substring(0, 10) + '...' : message;
-                updateChatTitle(currentChatId, newTitle);
-            }
-
-            // 更新对话列表中的时间和标题
-            fetchChats();
+            return handleStreamResponse(response, loadingDiv);
         })
         .catch(error => {
-            removeLoadingMessage(loadingId);
-            addMessageToChat('bot', '抱歉，获取回复时出现了问题。');
-            console.error('Error:', error);
+            console.error('发送消息失败:', error);
+            // 移除加载动画
+            if (loadingDiv.parentNode) {
+                chatBox.removeChild(loadingDiv);
+            }
+            // 显示错误消息
+            addMessageToChat('bot', '抱歉，发送消息时出现错误，请稍后重试。错误: ' + error.message);
         });
     }
 
-    // 事件监听
-    sendBtn.addEventListener('click', function() {
-        const message = userInput.value.trim();
-        if (message) {
-            addMessageToChat('user', message);
-            userInput.value = '';
-            sendMessage(message);
-        }
-    });
+    // 更新消息内容
+    function updateMessageContent(contentDiv, content) {
+        let formattedContent = escapeHtml(content);
+        formattedContent = formattedContent.replace(/(•|·)\s*/g, '<br>• ');
+        formattedContent = formattedContent.replace(/(\d+\.)\s*/g, '<br>$1 ');
+        formattedContent = formattedContent.replace(/-\s*/g, '<br>- ');
+        contentDiv.innerHTML = formattedContent;
+    }
 
-    userInput.addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') {
-            sendBtn.click();
-        }
-    });
+    // 保存完整消息
+    function saveCompleteMessage(fullResponse) {
+    // 更新对话列表
+    fetchChats();
 
-    newChatBtn.addEventListener('click', createNewChat);
+    // 移除streaming内容的ID，避免重复
+    const streamingContent = document.getElementById('streaming-content');
+    if (streamingContent) {
+        streamingContent.removeAttribute('id');
+    }
 
-    searchChat.addEventListener('input', function() {
-        const searchTerm = this.value.toLowerCase();
-        const filteredChats = chats.filter(chat =>
-            chat.title.toLowerCase().includes(searchTerm)
-        );
+    // 强制刷新当前对话的消息，确保显示保存后的状态
+    if (currentChatId) {
+        setTimeout(() => {
+            fetchChatMessages(currentChatId);
+        }, 500);
+    }
+}
 
-        // 重新渲染过滤后的列表
-        historyList.innerHTML = '';
-        filteredChats.forEach(chat => {
-            const item = document.createElement('div');
-            item.className = `history-item ${chat.id === currentChatId ? 'active' : ''}`;
+// 修改处理流式响应的函数，添加更好的完成处理
+function handleStreamResponse(response, loadingDiv) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let accumulatedResponse = '';
 
-            let kbInfo = '';
-            if (chat.knowledge_base_id) {
-                const kb = knowledgeBases.find(k => k.id === chat.knowledge_base_id);
-                if (kb) {
-                    kbInfo = `<div class="history-item-kb">知识库: ${kb.name}</div>`;
-                }
+    // 移除加载动画
+    if (loadingDiv.parentNode) {
+        chatBox.removeChild(loadingDiv);
+    }
+
+    // 创建新的机器人消息容器
+    const botMessageDiv = document.createElement('div');
+    botMessageDiv.className = 'bot-message';
+    botMessageDiv.innerHTML = `
+        <div class="avatar"><i class="fas fa-robot"></i></div>
+        <div class="message-content" id="streaming-content"></div>
+    `;
+    chatBox.appendChild(botMessageDiv);
+    scrollToBottom();
+
+    const contentDiv = document.getElementById('streaming-content');
+
+    function read() {
+        return reader.read().then(({ done, value }) => {
+            if (done) {
+                // 流式传输完成，保存完整消息
+                console.log('流式传输完成，完整响应:', accumulatedResponse);
+                saveCompleteMessage(accumulatedResponse);
+                return;
             }
 
-            item.innerHTML = `
-                <div class="history-item-text">
-                    <div class="history-item-content" title="${chat.title || '新对话'}">${chat.title || '新对话'}</div>
-                    ${kbInfo}
-                    <div class="history-item-date">${formatHistoryDate(chat.updated_at)}</div>
-                </div>
-                <div class="history-item-actions">
-                    <button class="edit-chat" data-id="${chat.id}" title="编辑标题"><i class="fas fa-edit"></i></button>
-                    <button class="delete-chat" data-id="${chat.id}" title="删除对话"><i class="fas fa-trash"></i></button>
-                </div>
-            `;
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n');
 
-            item.addEventListener('click', () => {
-                if (chat.id !== currentChatId) {
-                    loadChat(chat.id);
-                }
-            });
+            lines.forEach(line => {
+                if (line.startsWith('data: ')) {
+                    const data = line.slice(6);
 
-            historyList.appendChild(item);
-        });
-
-        // 重新绑定事件
-        document.querySelectorAll('.delete-chat').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const chatId = parseInt(btn.getAttribute('data-id'));
-                if (confirm('确定要删除这个对话吗？')) {
-                    deleteChat(chatId);
-                }
-            });
-        });
-
-        document.querySelectorAll('.edit-chat').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const chatId = parseInt(btn.getAttribute('data-id'));
-                const chat = chats.find(c => c.id === chatId);
-                if (chat) {
-                    const newTitle = prompt('请输入新的对话标题', chat.title || '新对话');
-                    if (newTitle && newTitle.trim() !== '') {
-                        updateChatTitle(chatId, newTitle.trim());
+                    // 检查是否传输结束
+                    if (data === '[DONE]' || (data.includes('"done"') && data.includes('true'))) {
+                        console.log('收到完成信号，完整响应:', accumulatedResponse);
+                        saveCompleteMessage(accumulatedResponse);
+                        return;
                     }
+
+                    // 检查是否有错误
+                    if (data.includes('"error"')) {
+                        try {
+                            const parsed = JSON.parse(data);
+                            if (parsed.error) {
+                                accumulatedResponse = parsed.error;
+                                updateMessageContent(contentDiv, accumulatedResponse);
+                                saveCompleteMessage(accumulatedResponse);
+                                return;
+                            }
+                        } catch (e) {
+                            console.error('解析错误信息失败:', e);
+                        }
+                    }
+
+                    try {
+                        // 解析JSON数据
+                        if (data.startsWith('{') && data.endsWith('}')) {
+                            const parsed = JSON.parse(data);
+                            if (parsed.content) {
+                                accumulatedResponse += parsed.content;
+                                updateMessageContent(contentDiv, accumulatedResponse);
+                            }
+                        } else if (data !== '[DONE]' && !data.includes('"done"') && !data.includes('"error"')) {
+                            // 普通文本数据
+                            accumulatedResponse += data;
+                            updateMessageContent(contentDiv, accumulatedResponse);
+                        }
+                    } catch (e) {
+                        // 如果不是JSON，当作普通文本处理
+                        if (data !== '[DONE]' && !data.includes('"done"') && !data.includes('"error"')) {
+                            accumulatedResponse += data;
+                            updateMessageContent(contentDiv, accumulatedResponse);
+                        }
+                    }
+
+                    scrollToBottom();
                 }
             });
+
+            return read();
+        });
+    }
+
+    return read().catch(error => {
+        console.error('流式读取失败:', error);
+        contentDiv.innerHTML = '抱歉，生成回复时出现错误。';
+        saveCompleteMessage(accumulatedResponse);
+    });
+}
+
+    // 滚动到底部
+    function scrollToBottom() {
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    // HTML转义
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // 事件监听器
+    sendBtn.addEventListener('click', () => sendMessage());
+    userInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            sendMessage();
+        }
+    });
+
+    newChatBtn.addEventListener('click', () => {
+        createNewChat();
+    });
+
+    searchChat.addEventListener('input', (e) => {
+        const searchTerm = e.target.value.toLowerCase();
+        const items = historyList.querySelectorAll('.history-item');
+
+        items.forEach(item => {
+            const content = item.querySelector('.history-item-content').textContent.toLowerCase();
+            if (content.includes(searchTerm)) {
+                item.style.display = 'flex';
+            } else {
+                item.style.display = 'none';
+            }
         });
     });
 
-    // 初始化
+    // 知识库选择器变更事件
+    if (kbSelector) {
+        kbSelector.addEventListener('change', () => {
+            // 当知识库变更时，可以重新加载当前对话或创建新对话
+            // 这里选择创建新对话
+            createNewChat();
+        });
+    }
+
+    // 初始化应用
     init();
 });

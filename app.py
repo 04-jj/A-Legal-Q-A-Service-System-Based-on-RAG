@@ -1,22 +1,29 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, Response
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_sqlalchemy import SQLAlchemy
-from werkzeug.security import generate_password_hash, check_password_hash
+from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader
 from model_utils import DeepSeekApiRag
 import os
 from datetime import datetime
 import uuid
+from dotenv import load_dotenv
+from werkzeug.security import generate_password_hash, check_password_hash
+
+# 加载环境变量
+load_dotenv()
 
 app = Flask(__name__)
 app.config['TEMPLATES_AUTO_RELOAD'] = True
 app.config['SECRET_KEY'] = os.urandom(24)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///user.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///user.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, 'uploads')
+app.config['KNOWLEDGE_BASE_FOLDER'] = os.path.join(app.root_path, 'knowledge_base')  # 新增知识库文件夹配置
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
 
-# 确保上传文件夹存在
+# 确保上传文件夹和知识库文件夹存在
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+os.makedirs(app.config['KNOWLEDGE_BASE_FOLDER'], exist_ok=True)
 
 # 初始化数据库和登录管理
 db = SQLAlchemy(app)
@@ -29,6 +36,7 @@ login_manager.login_message = ''
 class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
     phone = db.Column(db.String(20), unique=True, nullable=False)
+    username = db.Column(db.String(50), nullable=False)
     password_hash = db.Column(db.String(128), nullable=False)
     role = db.Column(db.String(20), nullable=False, default='user')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -39,9 +47,11 @@ class User(db.Model, UserMixin):
     uploaded_documents = db.relationship('UploadedDocument', backref='user', lazy=True, cascade="all, delete-orphan")
 
     def set_password(self, password):
+        """设置密码哈希"""
         self.password_hash = generate_password_hash(password)
 
     def check_password(self, password):
+        """验证密码"""
         return check_password_hash(self.password_hash, password)
 
 
@@ -99,22 +109,70 @@ def load_user(user_id):
 
 
 # 初始化 RAG 模型
-api_key = os.getenv("DEEPSEEK_API_KEY", "your_key")
-db_path = "law_faiss"
-rag_model = DeepSeekApiRag(api_key, db_path)
+api_key = os.getenv("DEEPSEEK_API_KEY")
+db_path = os.getenv("VECTOR_DB_PATH", "law_faiss")
 
-# 添加知识库文档
-if not os.path.exists(db_path):
-    folder_path = "F:/test/数据"
-    if os.path.exists(folder_path):
-        rag_model.add_folder_documents(folder_path)
-        print("文件夹中的文档已添加到知识库")
+
+def initialize_vector_database():
+    """初始化向量数据库，自动处理knowledge_base文件夹"""
+    global rag_model
+
+    # 初始化RAG模型
+    rag_model = DeepSeekApiRag(api_key, db_path)
+
+    # 检查向量数据库是否已存在
+    if not os.path.exists(db_path):
+        print("向量数据库不存在，开始构建...")
+
+        # 首先处理knowledge_base文件夹
+        knowledge_base_folder = app.config['KNOWLEDGE_BASE_FOLDER']
+        if os.path.exists(knowledge_base_folder) and os.listdir(knowledge_base_folder):
+            print(f"正在处理knowledge_base文件夹: {knowledge_base_folder}")
+            rag_model.add_folder_documents(knowledge_base_folder)
+            print("knowledge_base文件夹中的文档已添加到向量数据库")
+        else:
+            print(f"knowledge_base文件夹为空或不存在: {knowledge_base_folder}")
+
+        # 然后处理已上传的文档（从数据库记录）
+        with app.app_context():
+            all_docs = UploadedDocument.query.all()
+            if all_docs:
+                print("正在处理已上传的文档...")
+                # 收集所有文本一次性处理
+                all_texts = []
+                for doc in all_docs:
+                    if os.path.exists(doc.file_path):
+                        try:
+                            # 支持TXT文件
+                            if doc.file_path.lower().endswith('.pdf'):
+                                loader = PyPDFLoader(doc.file_path)
+                            elif doc.file_path.lower().endswith(('.doc', '.docx')):
+                                loader = Docx2txtLoader(doc.file_path)
+                            elif doc.file_path.lower().endswith('.txt'):
+                                loader = TextLoader(doc.file_path, encoding='utf-8')
+                            else:
+                                continue
+
+                            pages = loader.load()
+                            documents = rag_model.text_splitter.split_documents(pages)
+                            texts = [doc.page_content for doc in documents]
+                            all_texts.extend(texts)
+                            print(f"已读取文档: {doc.filename}, {len(texts)} 个文本块")
+                        except Exception as e:
+                            print(f"处理文档 {doc.filename} 失败: {e}")
+
+                # 一次性添加所有文本
+                if all_texts:
+                    rag_model.add_documents(all_texts)
+                    print(f"已上传文档处理完成，共 {len(all_texts)} 个文本块")
     else:
-        print(f"未找到文件夹: {folder_path}")
+        print("向量数据库已存在，跳过初始化构建")
 
-# 创建数据库表
+
+# 创建数据库表和初始化向量数据库
 with app.app_context():
     db.create_all()
+    initialize_vector_database()
 
 
 # 路由定义
@@ -131,12 +189,13 @@ def register():
 
     if request.method == 'POST':
         phone = request.form.get('phone')
+        username = request.form.get('username')
         password = request.form.get('password')
         confirm_password = request.form.get('confirm_password')
         role = request.form.get('role', 'user')
 
         # 验证输入
-        if not all([phone, password, confirm_password]):
+        if not all([phone, username, password, confirm_password]):  # 添加用户名验证
             flash('请填写所有必填字段', 'error')
             return redirect(url_for('register'))
 
@@ -153,9 +212,14 @@ def register():
             flash('该手机号已注册', 'error')
             return redirect(url_for('register'))
 
+        # 检查用户名是否已存在
+        if User.query.filter_by(username=username).first():
+            flash('该用户名已存在', 'error')
+            return redirect(url_for('register'))
+
         # 创建新用户
-        new_user = User(phone=phone, role=role)
-        new_user.set_password(password)
+        new_user = User(phone=phone, username=username, role=role)
+        new_user.set_password(password)  # 设置密码
 
         db.session.add(new_user)
         db.session.commit()
@@ -183,7 +247,7 @@ def login():
             flash('用户不存在', 'error')
             return redirect(url_for('login'))
 
-        if not user.check_password(password):
+        if not user.check_password(password):  # 现在这个方法已定义
             flash('手机号或密码错误', 'error')
             return redirect(url_for('login'))
 
@@ -206,7 +270,7 @@ def logout():
 def knowledge_bases():
     # 获取当前用户的所有知识库
     kb_list = KnowledgeBase.query.filter_by(user_id=current_user.id).order_by(KnowledgeBase.updated_at.desc()).all()
-    return render_template('knowledge_bases.html', knowledge_bases=kb_list)
+    return render_template('knowledge_base.html', knowledge_bases=kb_list)
 
 
 @app.route('/knowledge-base/create', methods=['GET', 'POST'])
@@ -339,10 +403,19 @@ def upload_document():
         db.session.add(new_doc)
         db.session.commit()
 
-        # 将文档添加到知识库
-        rag_model.add_file_documents(file_path)
+        try:
+            # 将文档添加到向量数据库
+            rag_model.add_file_documents(file_path)
+            flash('文件上传成功并已添加到向量数据库', 'success')
+        except Exception as e:
+            # 如果添加到向量数据库失败，删除已保存的文件和数据库记录
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            db.session.delete(new_doc)
+            db.session.commit()
+            flash(f'文件上传失败: {str(e)}', 'error')
+            return redirect(request.url)
 
-        flash('文件上传成功并已添加到知识库', 'success')
         return redirect(url_for('upload_document'))
 
     # 获取当前用户的知识库和上传记录
@@ -370,10 +443,9 @@ def delete_uploaded_document(doc_id):
         db.session.delete(doc)
         db.session.commit()
 
-        # 重新加载知识库（简单处理方式）
-        global rag_model
-        rag_model = DeepSeekApiRag(api_key, db_path)
-        flash('文档已删除', 'success')
+        # 重新构建向量数据库（因为FAISS不支持删除单个文档）
+        flash('文档已删除，下次启动时将重新构建向量数据库', 'success')
+
     except Exception as e:
         db.session.rollback()
         flash(f'删除文档失败: {str(e)}', 'error')
@@ -381,73 +453,150 @@ def delete_uploaded_document(doc_id):
     return redirect(url_for('upload_document'))
 
 
-@app.route('/ask', methods=['POST'])
+# 修改后的流式对话路由（带记忆功能）
+@app.route('/ask_stream', methods=['POST', 'GET'])
 @login_required
-def ask():
-    user_input = request.form.get('user_input')
-    chat_id = request.form.get('chat_id')
-    kb_id = request.form.get('knowledge_base_id')
+def ask_stream():
+    """专门的流式对话接口（带记忆）"""
+    # 处理参数
+    if request.method == 'GET':
+        user_input = request.args.get('user_input')
+        chat_id = request.args.get('chat_id')
+        kb_id = request.args.get('knowledge_base_id')
+    else:
+        user_input = request.form.get('user_input')
+        chat_id = request.form.get('chat_id')
+        kb_id = request.form.get('knowledge_base_id')
 
-    if not user_input:
-        return jsonify({'response': '请输入您的问题'})
+    if not user_input or not chat_id:
+        return jsonify({'error': '缺少必要参数'}), 400
 
-        if not chat_id:
-            return jsonify({'error': '缺少对话ID'}), 400
+    print(f"用户提问(流式): {user_input}")
 
-    print(f"用户提问: {user_input}")
+    # 使用chat_id作为对话记忆的标识
+    conversation_id = f"chat_{chat_id}"
 
     # 根据用户角色和选择的知识库使用不同的知识库
     if current_user.role in ['expert', 'admin'] and kb_id:
-        # 如果选择了特定知识库，只使用该知识库中的文档
         kb = KnowledgeBase.query.filter_by(id=kb_id, user_id=current_user.id).first()
         if kb:
-            # 获取知识库中的所有文档路径
             doc_paths = [doc.file_path for doc in kb.documents]
-            # 临时加载这些文档到RAG模型
             temp_rag = DeepSeekApiRag(api_key, db_path)
             for path in doc_paths:
                 if os.path.exists(path):
                     temp_rag.add_file_documents(path)
-            result = temp_rag.generate_response(user_input)
+            result = temp_rag.generate_response_stream(
+                user_input,
+                conversation_id=conversation_id
+            )
         else:
-            result = rag_model.generate_response(user_input)
+            result = rag_model.generate_response_stream(
+                user_input,
+                conversation_id=conversation_id
+            )
     else:
-        # 普通用户或未选择知识库：使用基础知识库
-        result = rag_model.generate_response(user_input)
+        result = rag_model.generate_response_stream(
+            user_input,
+            conversation_id=conversation_id
+        )
 
-    response = result['response']
-    print(f"模型回复: {response}")
+    # 先保存用户消息到数据库
+    try:
+        user_message = Message(
+            chat_id=chat_id,
+            role='user',
+            content=user_input
+        )
+        db.session.add(user_message)
+        db.session.commit()
+        print(f"用户消息已保存到数据库，chat_id: {chat_id}")
+    except Exception as e:
+        print(f"保存用户消息失败: {e}")
+        db.session.rollback()
 
-    # 保存用户消息
-    user_message = Message(
-        chat_id=chat_id,
-        role='user',
-        content=user_input
-    )
-    db.session.add(user_message)
+    def generate():
+        full_response = ""
+        try:
+            # 流式输出响应
+            for chunk in result['stream']:
+                content = chunk.content
+                full_response += content
+                cleaned_content = content.replace('\n', '\\n').replace('"', '\\"')
+                yield f"data: {{\"content\": \"{cleaned_content}\"}}\n\n"
 
-    # 保存AI回复
-    bot_message = Message(
-        chat_id=chat_id,
-        role='bot',
-        content=response
-    )
-    db.session.add(bot_message)
+            # 保存AI回复到记忆
+            rag_model.save_bot_response(conversation_id, full_response)
 
-    # 更新对话时间
-    chat = Chat.query.get(chat_id)
-    if chat:
-        chat.updated_at = datetime.utcnow()
-        if kb_id:
-            chat.knowledge_base_id = kb_id
+            # 在应用上下文中保存机器人回复到数据库
+            with app.app_context():
+                try:
+                    bot_message = Message(
+                        chat_id=chat_id,
+                        role='bot',
+                        content=full_response
+                    )
+                    db.session.add(bot_message)
 
-    db.session.commit()
+                    # 更新对话时间和知识库
+                    chat = Chat.query.get(chat_id)
+                    if chat:
+                        chat.updated_at = datetime.utcnow()
+                        if kb_id:
+                            chat.knowledge_base_id = kb_id
 
-    return jsonify({
-        'response': response,
-        'context': result.get('context', ''),
-        'documents': result.get('retrieved_documents', [])
-    })
+                    db.session.commit()
+                    print(f"机器人回复已保存到数据库，长度: {len(full_response)}")
+                except Exception as e:
+                    print(f"保存机器人回复失败: {e}")
+                    db.session.rollback()
+
+            yield "data: {\"done\": true}\n\n"
+
+        except Exception as e:
+            print(f"流式响应错误: {e}")
+            # 保存错误消息到记忆
+            error_msg = f"抱歉，生成回复时出现错误: {str(e)}"
+            rag_model.save_bot_response(conversation_id, error_msg)
+
+            # 在应用上下文中保存错误消息到数据库
+            with app.app_context():
+                try:
+                    error_message = Message(
+                        chat_id=chat_id,
+                        role='bot',
+                        content=error_msg
+                    )
+                    db.session.add(error_message)
+
+                    chat = Chat.query.get(chat_id)
+                    if chat:
+                        chat.updated_at = datetime.utcnow()
+
+                    db.session.commit()
+                    print("错误消息已保存到数据库")
+                except Exception as db_error:
+                    print(f"保存错误消息失败: {db_error}")
+                    db.session.rollback()
+
+            yield f"data: {{\"error\": \"{error_msg}\"}}\n\n"
+            yield "data: {\"done\": true}\n\n"
+
+    return Response(generate(), mimetype='text/event-stream')
+
+
+# 清空对话记忆路由
+@app.route('/api/chats/<int:chat_id>/clear_memory', methods=['POST'])
+@login_required
+def clear_chat_memory(chat_id):
+    """清空特定对话的记忆"""
+    chat = Chat.query.filter_by(id=chat_id, user_id=current_user.id).first()
+    if not chat:
+        return jsonify({'error': '对话不存在'}), 404
+
+    conversation_id = f"chat_{chat_id}"
+    rag_model.clear_conversation_memory(conversation_id)
+
+    return jsonify({'success': True, 'message': '对话记忆已清空'})
 
 
 # 对话相关API
@@ -550,6 +699,10 @@ def delete_chat(chat_id):
     chat = Chat.query.filter_by(id=chat_id, user_id=current_user.id).first()
     if not chat:
         return jsonify({'error': '对话不存在'}), 404
+
+    # 同时清空对话记忆
+    conversation_id = f"chat_{chat_id}"
+    rag_model.clear_conversation_memory(conversation_id)
 
     db.session.delete(chat)
     db.session.commit()
